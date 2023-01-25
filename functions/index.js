@@ -68,63 +68,81 @@ const checkCross = (lineA, lineB) => {
 };
 
 const blacklist = [
-  "USDC/USDT",
-  "USDP/USDT",
-  "USDSB/USDT",
-  "BUSD/USDT",
-  "SUSD/USDT",
-  "TUSD/USDT",
-  "USDSB/USDT",
-  "VEN/USDT",
-  "UST/USDT",
-  "DAI/USDT",
-  "FRAX/USDT",
-  "USDN/USDT",
-  "LUSD/USDT",
-  "USDD/USDT",
+  "USDC",
+  "USDP",
+  "USDSB",
+  "BUSD",
+  "SUSD",
+  "TUSD",
+  "USDSB",
+  "VEN",
+  "UST",
+  "DAI",
+  "FRAX",
+  "USDN",
+  "LUSD",
+  "USDD",
 ];
 
 const startScan = async (timeframe) => {
   let result = [];
+  const FETCH_LIMIT = 100;
 
   functions.logger.info("Start scaning...");
   await exchange.load_markets();
 
   if (exchange.has["fetchOHLCV"]) {
-    for (symbol in exchange.markets) {
-      if (
-        symbol.includes("/USDT") &&
-        !symbol.includes("UP/USDT") &&
-        !symbol.includes("DOWN/USDT") &&
-        !symbol.includes("BULL/USDT") &&
-        !symbol.includes("BEAR/USDT") &&
-        !blacklist.includes(symbol)
-      ) {
-        await sleep(exchange.rateLimit);
-        try {
-          const tickers = await exchange.fetchOHLCV(
-            symbol,
-            timeframe,
-            undefined,
-            100
-          );
-          if (tickers.length) {
-            const priceList = tickers.map((c) => c[4]);
-            const emaFast = calculateEMA(priceList, 13);
-            const emaSlow = calculateEMA(priceList, 34);
+    const marketsFiltered = [];
+    Object.entries(exchange.markets).forEach((market) => {
+      const { active, base, quote, symbol } = market[1];
+      if (!active) {
+        return;
+      }
 
-            const emaCross = checkCross(emaFast.slice(-2), emaSlow.slice(-2));
+      if (quote !== "USDT") {
+        return;
+      }
 
-            if (emaCross) {
-              result.push({
-                symbol: symbol,
-                emaCross: emaCross,
-              });
-            }
+      if (symbol.endsWith("BULL/USDT") || symbol.endsWith("BEAR/USDT")) {
+        return;
+      }
+
+      if (symbol.endsWith("UP/USDT") || symbol.endsWith("DOWN/USDT")) {
+        return;
+      }
+
+      if (blacklist.includes(base)) {
+        return;
+      }
+
+      marketsFiltered.push(symbol);
+    });
+
+    for (const symbol of marketsFiltered.slice(0, FETCH_LIMIT)) {
+      await sleep(exchange.rateLimit);
+      try {
+        const tickers = await exchange.fetchOHLCV(
+          symbol,
+          timeframe,
+          undefined,
+          100
+        );
+        if (tickers.length) {
+          const priceList = tickers.map((c) => c[4]);
+          const emaFast = calculateEMA(priceList, 13);
+          const emaSlow = calculateEMA(priceList, 34);
+
+          const emaCross = checkCross(emaFast.slice(-2), emaSlow.slice(-2));
+
+          if (emaCross) {
+            result.push({
+              symbol: symbol,
+              emaCross: emaCross,
+            });
           }
-        } catch (error) {
-          functions.logger.error(error);
         }
+      } catch (error) {
+        functions.logger.error(error);
       }
     }
   }
